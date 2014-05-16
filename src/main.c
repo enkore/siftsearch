@@ -61,6 +61,7 @@ struct match {
     char *file;
     int num_features;
     int num_matches;
+    int percent;
 };
 
 const char *file_extensions[] = {".jpg", ".jpeg", ".png", ".bmp", ".gif", 0};
@@ -68,12 +69,10 @@ const char *file_extensions[] = {".jpg", ".jpeg", ".png", ".bmp", ".gif", 0};
 int match_compare(const void *a_, const void *b_)
 {
     const struct match *a = a_, *b = b_;
-    int a_percent = (a->num_matches*100)/a->num_features;
-    int b_percent = (b->num_matches*100)/b->num_features;
 
-    if(a_percent > b_percent)
+    if(a->percent > b->percent)
         return 1;
-    if(a_percent < b_percent)
+    if(a->percent < b->percent)
         return -1;
     return 0;
 }
@@ -180,10 +179,10 @@ int update_index(const char *dir, GDBM_FILE db)
     return enumerate_files(dir, file_extensions, index_file, db);
 }
 
-int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_matches)
+int match_file(const char *file, GDBM_FILE db, struct match **pmatches, int *pnum_matches)
 {
-    (void)matches;
-    *num_matches = 0;
+    struct match *matches = malloc(1);
+    int num_matches = 0;
 
     struct feature *other_features;
     int num_other_features;
@@ -203,8 +202,8 @@ int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_
     while(1) {
         int j;
 
-	if(!key.dptr)
-	    break;
+        if(!key.dptr)
+            break;
 
         for(j = 0; j < bufsz && key.dptr; j++, key = gdbm_nextkey(db, key)) {
             datum data = gdbm_fetch(db, key);
@@ -235,8 +234,25 @@ int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_
                 free(nbrs);
             }
 
-            if((m*100) / num_other_features > 10)
-                tprintf("%s: %d matches [%d %%]\n", buffer[k].key, m, (m*100)/num_other_features);
+            int match_percent = (m*100) / num_other_features;
+            if(match_percent > 10) {
+                if(isatty(STDOUT_FILENO)) {
+                    printf("%s: %d matches [%d %%]\n", buffer[k].key, m, (m*100)/num_other_features);
+                } else {
+                    puts(buffer[k].key);
+                }
+
+                struct match match = {
+                    .file = strdup(buffer[k].key),
+                    .num_features = num_other_features,
+                    .num_matches = m,
+                    .percent = match_percent
+                };
+
+                num_matches += 1;
+                matches = realloc(matches, num_matches * sizeof(*matches));
+                matches[num_matches-1] = match;
+            }
 
             free(buffer[k].key);
             free(buffer[k].data);
@@ -244,6 +260,9 @@ int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_
     }
 
     free(other_features);
+
+    *pmatches = matches;
+    *pnum_matches = num_matches;
 
     return 0;
 }
@@ -360,46 +379,49 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    /* char **exec_files = malloc(2*sizeof(char*)); */
-    /* int num_exec_files = 1; */
-    /* exec_files[0] = exec; */
+    // At least space for argv[0] and terminating NUL
+    char **exec_files = malloc(2*sizeof(char*));
+    int num_exec_files = 1;
+    exec_files[0] = exec;
 
     for(int i = optind; i < argc; i++) {
         struct match *matches;
         int num_matches = 0;
 
-        printf("Matching '%s'...\n", argv[i]);
+        fprintf(stderr, "Matching '%s'...\n", argv[i]);
         match_file(argv[i], db, &matches, &num_matches);
 
-        /* num_exec_files += num_matches; */
-        /* exec_files = realloc(exec_files, num_exec_files+1); */
-        /* memcpy(exec_files[num_exec_files - num_matches], matches, sizeof(const char **) * num_matches); */
+        num_exec_files += num_matches;
+        exec_files = realloc(exec_files, num_exec_files+1);
+        match_sort(matches, num_matches);
 
-        if(isatty(STDOUT_FILENO)) {
-            // detailed information (match %, feature count matches) goes to stdout
-        } else {
-            // else goes to stderr
+        for(int j = 0; j < num_matches; j++) {
+            exec_files[num_exec_files - num_matches + j] = matches[j].file;
         }
     }
 
-    /*     if(exec) { */
-    /*         for(int i = 0; i < num_exec_files; i++) */
-    /*             printf("%s ", exec_files[i]); */
-    /*         printf("\n"); */
+    if(exec) {
+        for(int i = 0; i < num_exec_files; i++)
+            printf("%s ", exec_files[i]);
+        printf("\n");
 
-    /*         // complete cleanup */
-    /*         db_close(db); */
+        gdbm_close(db);
 
-    /*         exec_files[num_exec_files] = 0; // terminate array with NUL */
-    /*         execvp(exec, exec_files); */
-    /* //	execvp(exec, exec + [match_files]); */
-    /*     } */
+        // terminate array with NUL
+        exec_files[num_exec_files] = 0;
 
-    /* free(exec_files); */
+        execvp(exec, exec_files);
+    }
+
+    for(int i = 0; i < num_exec_files; i++) {
+        free(exec_files[i]);
+    }
+    free(exec_files);
 
     gdbm_close(db);
     return 0;
 }
+
 
 
 
