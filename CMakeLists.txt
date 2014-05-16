@@ -4,8 +4,7 @@ project(siftsearch)
 
 include(ExternalProject)
 
-
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Wall -pedantic -Wextra -O0")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -Wall -pedantic -Wextra -O2")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DDEBUG")
 
 add_definitions(-D_BSD_SOURCE)
@@ -13,7 +12,6 @@ add_definitions(-D_BSD_SOURCE)
 # OpenMP
 find_package(OpenMP REQUIRED)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
 
 # OpenCV
@@ -26,7 +24,6 @@ find_package(GTK2 REQUIRED)
 ExternalProject_Add(
   opensift
   PREFIX ${CMAKE_BINARY_DIR}/opensift
-#  URL /home/mabe/Projekte/_oss/opensift/
   GIT_REPOSITORY https://github.com/robwhess/opensift.git
   TIMEOUT 10
   UPDATE_COMMAND git pull
