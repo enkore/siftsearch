@@ -1,0 +1,471 @@
+
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include <unistd.h>
+
+#include <getopt.h>
+#include <string.h>
+#include <strings.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <errno.h>
+
+#include <err.h>
+#include <fts.h>
+
+#include <omp.h>
+
+#include <gdbm.h>
+
+#include <cv.h>
+#include <cxcore.h>
+#include <highgui.h>
+
+#include "sift.h"
+#include "imgfeatures.h"
+#include "kdtree.h"
+
+#include "util.h"
+#include "tree.h"
+#include "db.h"
+
+/**
+ * Contrast threshold for finding SIFT features
+ *
+ * default: 0.04, which yields lots and lots of points
+ * recommended: 0.1
+ */
+#define SIFT_CONTRAST_THRESHOLD 0.1
+
+/**
+ * the maximum number of keypoint NN candidates to check during BBF search
+ */
+#define KDTREE_BBF_MAX_NN_CHKS 200
+
+/**
+ * threshold on squared ratio of distances between NN and 2nd NN
+ *
+ * This basically defines the neighbourhood size for matches
+ */
+#define NN_SQ_DIST_RATIO_THR 0.49
+
+#define tprintf(...) {						\
+	fprintf(stderr, "[%02d] ", omp_get_thread_num());	\
+	fprintf(stderr, __VA_ARGS__);				\
+    }
+
+int verbose = 0;
+
+struct match {
+    char *file;
+    int num_features;
+    int num_matches;
+};
+
+const char *file_extensions[] = {".jpg", ".jpeg", ".png", ".bmp", ".gif", 0};
+
+int match_compare(const void *a_, const void *b_)
+{
+    const struct match *a = a_, *b = b_;
+    int a_percent = (a->num_matches*100)/a->num_features;
+    int b_percent = (b->num_matches*100)/b->num_features;
+
+    if(a_percent > b_percent)
+        return 1;
+    if(a_percent < b_percent)
+        return -1;
+    return 0;
+}
+
+void match_sort(struct match *matches, int num_matches)
+{
+    qsort(matches, num_matches, sizeof(*matches), match_compare);
+}
+
+/**
+ * Apply SIFT algorithm to an image
+ *
+ * @return 0 on failure, nonzero on success
+ */
+int sift(const char *path, struct feature **features, int *num_features)
+{
+    IplImage *img;
+    static const int MAX_SIZE = 800;
+
+    img = cvLoadImage(path, 1);
+    if(!img) {
+        fprintf(stderr, "%s: I/O error\n", path);
+        return 0;
+    }
+
+    if(img->width > MAX_SIZE || img->height > MAX_SIZE) {
+        IplImage *scaled = cvCreateImage(
+                               cvSize(img->width > MAX_SIZE ? MAX_SIZE : img->width, img->height > MAX_SIZE ? MAX_SIZE : img->height)
+                               , img->depth, img->nChannels);
+
+        if(!scaled) {
+            fprintf(stderr, "%s: cvCreateImage failed (out of memory?)\n", path);
+            cvReleaseImage(&img);
+            return 0;
+        }
+
+        cvResize(img, scaled, CV_INTER_LINEAR);
+        cvReleaseImage(&img);
+        img = scaled;
+    }
+
+    (*num_features) = _sift_features(img, features, SIFT_INTVLS, SIFT_SIGMA, SIFT_CONTRAST_THRESHOLD,
+                                     SIFT_CURV_THR, SIFT_IMG_DBL, SIFT_DESCR_WIDTH,
+                                     SIFT_DESCR_HIST_BINS );
+    cvReleaseImage(&img);
+
+    if(!(*features) || !(*num_features)) {
+        fprintf(stderr, "%s: No features found\n", path);
+        return 0;
+    }
+
+    return 1;
+}
+
+void index_file(char *path, void* db_)
+{
+    DB db = (DB)db_;
+
+    /* datum key = {path, strlen(path)+1}; */
+    /* int skip; */
+
+    /* #pragma omp critical */
+    /* skip = gdbm_exists(db, key); */
+    /* if(skip) { */
+    /*     free(path); */
+    /*     return; */
+    /* } */
+
+    struct feature *features;
+    int num_features;
+    struct kd_node *kd_tree;
+    char *data;
+    size_t data_size;
+
+    if(verbose)
+        tprintf("%s\n", path);
+
+    if(!sift(path, &features, &num_features)) {
+        free(path);
+        return;
+    }
+
+    if(verbose)
+        tprintf("  %d features detected\n", num_features);
+
+    kd_tree = kdtree_build(features, num_features);
+
+    pack(features, num_features, kd_tree, &data, &data_size);
+
+    free(features);
+    kdtree_release(kd_tree);
+
+    /* datum value = {data, data_size}; */
+
+    #pragma omp critical
+    db_append(db, path, data, data_size);
+//    gdbm_store(db, key, value, GDBM_REPLACE);
+
+    free(data);
+    free(path);
+}
+
+int update_index(const char *dir, DB db)
+{
+    return enumerate_files(dir, file_extensions, index_file, db);
+}
+
+int match_file(const char *file, DB db, struct match **matches, int *num_matches)
+{
+    (void)matches;
+    *num_matches = 0;
+
+    // "Readers and writers can not open the gdbm database at the same time."
+    // Thus it is safe to assume the database does not change while we
+    // enumerate keys and match stuff later.
+
+    /* gdbm_count_t num_keys, i; */
+    /* datum *keys, key; */
+    /* gdbm_count(db, &num_keys); */
+    /* keys = malloc(sizeof(datum) * num_keys); */
+
+    /* for(i = 0, key = gdbm_firstkey(db); key.dptr; i++, key = gdbm_nextkey(db, key)) { */
+    /*     keys[i] = key; */
+    /* } */
+
+    struct feature *other_features;
+    int num_other_features;
+
+    if(!sift(file, &other_features, &num_other_features)) {
+        return 0;
+    }
+
+    printf("%d\n", num_other_features);
+
+    // TODO:
+    // one I/O thread, ring buffer for threads
+// currently this is not efficient due to critical gdbm_fetch
+
+    // well this isn't much more efficient either
+// ring buffer or custom file format (it's easy because we don't need
+// a hashmap only linear iteration & appending) seems to be the best
+// bet to get more perfomance. custom FF maybe means concurrent
+// reads...
+
+
+    off_t index = 0;
+    int end_of_records = 0;
+    static const int bufsz = 64;
+    struct {
+        char *key;
+        char *data;
+    } buffer[bufsz];
+
+    while(!end_of_records) {
+        int j;
+
+        for(j = 0; j < bufsz; j++) {
+            if(!db_next(db, &index, &buffer[j].key, &buffer[j].data, 0)) {
+		end_of_records = 1;
+                break;
+	    }
+        }
+
+        #pragma omp parallel for
+        for(int k = 0; k < j; k++) {
+            struct feature *features, *feat;
+            struct kd_node *tree;
+
+            unpack(buffer[k].data, &features, &tree);
+
+            struct feature** nbrs;
+            double d0, d1;
+            int i, m = 0;
+            for(i = 0; i < num_other_features; i++) {
+                feat = other_features + i;
+                if(kdtree_bbf_knn(tree, feat, 2, &nbrs, KDTREE_BBF_MAX_NN_CHKS) == 2) {
+                    d0 = descr_dist_sq(feat, nbrs[0]);
+                    d1 = descr_dist_sq(feat, nbrs[1]);
+                    if(d0 < d1 * NN_SQ_DIST_RATIO_THR) {
+                        m++;
+                        other_features[i].fwd_match = nbrs[0];
+                    }
+                }
+                free(nbrs);
+            }
+
+            if((m*100) / num_other_features > 10)
+                tprintf("%s: %d matches [%d %%]\n", buffer[k].key, m, (m*100)/num_other_features);
+            free(buffer[k].key);
+        }
+    }
+
+    /* #pragma omp parallel for */
+    /* for(i = 0; i < num_keys; i++) { */
+    /*     datum value; */
+    /*     struct feature *features, *feat; */
+    /*     struct kd_node *tree; */
+
+    /*     #pragma omp critical */
+    /*     value = gdbm_fetch(db, keys[i]); */
+    /*     // value.dptr is never NULL in this case, because the key is */
+    /*     // valid as per firstkey/nextkey postcondition. */
+
+    /*     unpack(value.dptr, &features, &tree); */
+
+    /*     struct feature** nbrs; */
+    /*     double d0, d1; */
+    /*     int k, i, m = 0; */
+    /*     for(i = 0; i < num_other_features; i++) { */
+    /*         feat = other_features + i; */
+    /*         k = kdtree_bbf_knn(tree, feat, 2, &nbrs, KDTREE_BBF_MAX_NN_CHKS); */
+    /*         if(k == 2) { */
+    /*             d0 = descr_dist_sq(feat, nbrs[0]); */
+    /*             d1 = descr_dist_sq(feat, nbrs[1]); */
+    /*             if(d0 < d1 * NN_SQ_DIST_RATIO_THR) { */
+    /*                 m++; */
+    /*                 other_features[i].fwd_match = nbrs[0]; */
+    /*             } */
+    /*         } */
+    /*         free(nbrs); */
+    /*     } */
+
+    /*     tprintf("%s: %d matches [%d %%]\n", keys[i].dptr, m, (m*100)/num_other_features); */
+
+    /*     free(value.dptr); */
+    /*     free(key.dptr); */
+    /* } */
+
+
+    free(other_features);
+    /* free(keys); */
+
+    return 0;
+}
+
+void print_usage(FILE* f)
+{
+    fprintf(f,
+            "siftsearch\n"
+            "Yet another image search tool\n"
+            "Copyright (c) 2014 Marian Beermann, GPLv3 license\n"
+
+            "\nUsage:\n"
+            "\tsiftsearch --help\n"
+            "\tsiftsearch [--db <file>] [--clean] --index <directory>\n"
+            "\tsiftsearch [--db <file>] [--exec <command>] <file> ...\n"
+            "\tsiftsearch [--db <file>] --dump\n"
+
+            "\nOptions:\n"
+            "    --db <file>\n"
+            "\tSet database file to use.\n"
+            "    --index <directory>\n"
+            "\tCreate or update database from all images in the given directory\n"
+            "\t, recursing subdirectories.\n"
+            "    --clean\n"
+            "\tDiscard existing database contents, if any. Not effective without\n"
+            "\t--index.\n"
+            "    --exec <command>\n"
+            "\tExecute <command> with absolute paths to found files.\n"
+            "    --help\n"
+            "\tDisplay this help message.\n"
+            "    --dump\n"
+            "\tList all indexed files and exit.\n");
+}
+
+int main(int argc, char **argv)
+{
+    DB db;
+    char *dbfile = "sift.db";
+    int dbflags = 0;
+    char *index_dir = 0;
+    char *exec = 0;
+    (void)exec;
+    int dump = 0;
+
+    /* printf("sizeof(sift_data)=%d\n", sizeof(struct sift_data)); */
+    /* printf("sizeof(kd_node)=%d\n", sizeof(struct kd_node)); */
+    /* printf("sizeof(feature)=%d\n", sizeof(struct feature)); */
+
+    struct option long_options[] = {
+        {"index",required_argument, 0,  'i'},
+        {"clean",no_argument,       &dbflags, DB_TRUNCATE},
+        {"db",   required_argument, 0,  'b'},
+        {"exec", required_argument, 0,  'e'},
+        {"dump", no_argument,       &dump, 1},
+        {"help", no_argument,       0,  'h'},
+        {"verbose",no_argument,     &verbose, 1},
+        {0,      0,                 0,   0}
+    };
+
+    while(1) {
+        int option_index = 0;
+        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        if(c == -1)
+            break;
+
+        switch (c) {
+        case 'i':
+            index_dir = optarg;
+            break;
+        case 'b':
+            dbfile = optarg;
+            break;
+        case 'e':
+            exec = optarg;
+            break;
+        case 'h':
+            print_usage(stderr);
+            return 0;
+        case 0: // Flags
+            break;
+        default:
+            return 1;
+        }
+    }
+
+    if(index_dir) {
+        db = db_open(dbfile, DB_WRITE|DB_CREATE|dbflags);
+        if(!db) {
+            fprintf(stderr, "Can't open '%s': %s\n", dbfile, strerror(errno));
+            return 1;
+        }
+
+        printf("Indexing '%s'\n", index_dir);
+        update_index(index_dir, db);
+        db_close(db);
+    }
+
+    // Subsequent operations require no write access
+    db = db_open(dbfile, 0);
+    if(!db) {
+        fprintf(stderr, "Can't open '%s': %s\n", dbfile, strerror(errno));
+        return 1;
+    }
+
+    if(dump) {
+        // This functionality doesn't seem to be available easily
+        // using gdbmtool or similar thus I added it here
+        off_t index = 0;
+        char *key, *value;
+
+        while(db_next(db, &index, &key, &value, 0)) {
+            puts(key);
+            free(key);
+        }
+
+        db_close(db);
+        return 0;
+    }
+
+    /* char **exec_files = malloc(2*sizeof(char*)); */
+    /* int num_exec_files = 1; */
+    /* exec_files[0] = exec; */
+
+    for(int i = optind; i < argc; i++) {
+        struct match *matches;
+        int num_matches = 0;
+
+        printf("Matching '%s'...\n", argv[i]);
+        match_file(argv[i], db, &matches, &num_matches);
+
+        /* num_exec_files += num_matches; */
+        /* exec_files = realloc(exec_files, num_exec_files+1); */
+        /* memcpy(exec_files[num_exec_files - num_matches], matches, sizeof(const char **) * num_matches); */
+
+        if(isatty(STDOUT_FILENO)) {
+            // detailed information (match %, feature count matches) goes to stdout
+        } else {
+            // else goes to stderr
+        }
+    }
+
+/*     if(exec) { */
+/*         for(int i = 0; i < num_exec_files; i++) */
+/*             printf("%s ", exec_files[i]); */
+/*         printf("\n"); */
+
+/*         // complete cleanup */
+/*         db_close(db); */
+
+/*         exec_files[num_exec_files] = 0; // terminate array with NUL */
+/*         execvp(exec, exec_files); */
+/* //	execvp(exec, exec + [match_files]); */
+/*     } */
+
+    /* free(exec_files); */
+
+    db_close(db);
+    return 0;
+}
+
+
+
+
