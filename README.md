@@ -7,7 +7,7 @@ skewed and so on).
 The modus operandi of this tool is to create a database from a given
 set of images and then match images against that database.
 
-[![Travis Build](https://api.travis-ci.org/enkore/j4-dmenu-desktop.png)](https://travis-ci.org/enkore/j4-dmenu-desktop/)
+<!-- [![Travis Build](https://api.travis-ci.org/enkore/j4-dmenu-desktop.png)](https://travis-ci.org/enkore/j4-dmenu-desktop/) -->
 
 
 ## Build requirements
