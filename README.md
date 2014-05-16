@@ -12,11 +12,11 @@ set of images and then match images against that database.
 
 ## Build requirements
 
-* Compiler with basic C++11 support (GCC 4.8 or later required, Clang works, too)
+* C Compiler with OpenMP support
 * CMake
 * OpenCV
 * OpenSIFT
-* Boost
+* GDBM
 
 Building is the usual cmake/make thingy:
 
@@ -26,24 +26,33 @@ Building is the usual cmake/make thingy:
 
 ## Invocation
 
-Usage:
+    siftsearch
+    Yet another image search tool
+    Copyright (c) 2014 Marian Beermann, GPLv3 license
+    
+    Usage:
+            siftsearch --help
+            siftsearch [--db <file>] [--clean] --index <directory>
+            siftsearch [--db <file>] [--exec <command>] <file> ...
+            siftsearch [--db <file>] --dump
+    
+    Options:
+        --db <file>
+            Set database file to use.
+        --index <directory>
+            Create or update database from all images in the given directory
+            , recursing subdirectories.
+        --clean
+            Discard existing database contents, if any. Not effective without
+            --index.
+        --exec <command>
+            Execute <command> with absolute paths to found files.
+        --help
+            Display this help message.
+        --dump
+            List all indexed files and exit.Usage:
 
 
 	siftsearch index [--db="sift.db"] [<directory>]
 	siftsearch search [--db="sift.db"] <file>
 	siftsearch --help
-
-Subcommands:
-
-	index [<directory>]
-		Create or update a database from all images in the given directory, recursing subdirectories.
-		<directory> defaults to the current working directory.
-
-	search
-		Match <file> against the database
-
-Options:
-
-	--db="sift.db"
-		Selects the database to use, default is sift.db in the working directory
-
