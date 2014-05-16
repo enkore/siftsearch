@@ -116,7 +116,7 @@ int sift(const char *path, struct feature **features, int *num_features)
 
     (*num_features) = _sift_features(img, features, SIFT_INTVLS, SIFT_SIGMA, SIFT_CONTRAST_THRESHOLD,
                                      SIFT_CURV_THR, SIFT_IMG_DBL, SIFT_DESCR_WIDTH,
-                                     SIFT_DESCR_HIST_BINS );
+                                     SIFT_DESCR_HIST_BINS);
     cvReleaseImage(&img);
 
     if(!(*features) || !(*num_features)) {
@@ -183,14 +183,12 @@ int match_file(const char *file, GDBM_FILE db, struct match **pmatches, int *pnu
 {
     struct match *matches = malloc(1);
     int num_matches = 0;
-
     struct feature *other_features;
     int num_other_features;
 
     if(!sift(file, &other_features, &num_other_features)) {
         return 0;
     }
-
 
     datum key = gdbm_firstkey(db);
     static const int bufsz = 64;
@@ -290,7 +288,8 @@ void print_usage(FILE* f)
             "\tDiscard existing database contents, if any. Not effective without\n"
             "\t--index.\n"
             "    --exec <command>\n"
-            "\tExecute <command> with absolute paths to found files.\n"
+            "\tExecute <command> with absolute paths to found files sorted by ascending\n"
+            "\tmatch percentage.\n"
             "    --help\n"
             "\tDisplay this help message.\n"
             "    --dump\n"
@@ -392,7 +391,7 @@ int main(int argc, char **argv)
         match_file(argv[i], db, &matches, &num_matches);
 
         num_exec_files += num_matches;
-        exec_files = realloc(exec_files, num_exec_files+1);
+        exec_files = realloc(exec_files, (num_exec_files+1)*sizeof(char*));
         match_sort(matches, num_matches);
 
         for(int j = 0; j < num_matches; j++) {
@@ -421,8 +420,4 @@ int main(int argc, char **argv)
     gdbm_close(db);
     return 0;
 }
-
-
-
-
 
