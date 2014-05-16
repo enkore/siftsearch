@@ -138,7 +138,6 @@ void index_file(char *path, void* db_)
     #pragma omp critical
     skip = gdbm_exists(db, key);
     if(skip) {
-	printf("skip\n");
         free(path);
         return;
     }
@@ -186,35 +185,12 @@ int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_
     (void)matches;
     *num_matches = 0;
 
-    // "Readers and writers can not open the gdbm database at the same time."
-    // Thus it is safe to assume the database does not change while we
-    // enumerate keys and match stuff later.
-
-    /* gdbm_count_t num_keys, i; */
-    /* datum *keys, key; */
-    /* gdbm_count(db, &num_keys); */
-    /* keys = malloc(sizeof(datum) * num_keys); */
-
-    /* for(i = 0, key = gdbm_firstkey(db); key.dptr; i++, key = gdbm_nextkey(db, key)) { */
-    /*     keys[i] = key; */
-    /* } */
-
     struct feature *other_features;
     int num_other_features;
 
     if(!sift(file, &other_features, &num_other_features)) {
         return 0;
     }
-
-    // TODO:
-    // one I/O thread, ring buffer for threads
-// currently this is not efficient due to critical gdbm_fetch
-
-    // well this isn't much more efficient either
-// ring buffer or custom file format (it's easy because we don't need
-// a hashmap only linear iteration & appending) seems to be the best
-// bet to get more perfomance. custom FF maybe means concurrent
-// reads...
 
 
     datum key = gdbm_firstkey(db);
@@ -267,45 +243,7 @@ int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_
         }
     }
 
-    /* #pragma omp parallel for */
-    /* for(i = 0; i < num_keys; i++) { */
-    /*     datum value; */
-    /*     struct feature *features, *feat; */
-    /*     struct kd_node *tree; */
-
-    /*     #pragma omp critical */
-    /*     value = gdbm_fetch(db, keys[i]); */
-    /*     // value.dptr is never NULL in this case, because the key is */
-    /*     // valid as per firstkey/nextkey postcondition. */
-
-    /*     unpack(value.dptr, &features, &tree); */
-
-    /*     struct feature** nbrs; */
-    /*     double d0, d1; */
-    /*     int k, i, m = 0; */
-    /*     for(i = 0; i < num_other_features; i++) { */
-    /*         feat = other_features + i; */
-    /*         k = kdtree_bbf_knn(tree, feat, 2, &nbrs, KDTREE_BBF_MAX_NN_CHKS); */
-    /*         if(k == 2) { */
-    /*             d0 = descr_dist_sq(feat, nbrs[0]); */
-    /*             d1 = descr_dist_sq(feat, nbrs[1]); */
-    /*             if(d0 < d1 * NN_SQ_DIST_RATIO_THR) { */
-    /*                 m++; */
-    /*                 other_features[i].fwd_match = nbrs[0]; */
-    /*             } */
-    /*         } */
-    /*         free(nbrs); */
-    /*     } */
-
-    /*     tprintf("%s: %d matches [%d %%]\n", keys[i].dptr, m, (m*100)/num_other_features); */
-
-    /*     free(value.dptr); */
-    /*     free(key.dptr); */
-    /* } */
-
-
     free(other_features);
-    /* free(keys); */
 
     return 0;
 }
