@@ -92,16 +92,16 @@ int sift(const char *path, struct feature **features, int *num_features)
     IplImage *img;
     static const int MAX_SIZE = 800;
 
-    img = cvLoadImage(path, 1);
+    img = cvLoadImage(path, CV_LOAD_IMAGE_COLOR);
     if(!img) {
         fprintf(stderr, "%s: I/O error\n", path);
         return 0;
     }
 
     if(img->width > MAX_SIZE || img->height > MAX_SIZE) {
-        IplImage *scaled = cvCreateImage(
-                               cvSize(img->width > MAX_SIZE ? MAX_SIZE : img->width, img->height > MAX_SIZE ? MAX_SIZE : img->height)
-                               , img->depth, img->nChannels);
+        IplImage *scaled = cvCreateImage(cvSize(img->width > MAX_SIZE ? MAX_SIZE : img->width,
+                                                img->height > MAX_SIZE ? MAX_SIZE : img->height),
+                                         img->depth, img->nChannels);
 
         if(!scaled) {
             fprintf(stderr, "%s: cvCreateImage failed (out of memory?)\n", path);
@@ -399,11 +399,11 @@ int main(int argc, char **argv)
     }
 
     if(exec) {
-	if(verbose) {
-	    for(int i = 0; i < num_exec_files; i++)
-		printf("%s ", exec_files[i]);
-	    printf("\n");
-	}
+        if(verbose) {
+            for(int i = 0; i < num_exec_files; i++)
+                printf("%s ", exec_files[i]);
+            printf("\n");
+        }
 
         gdbm_close(db);
 
