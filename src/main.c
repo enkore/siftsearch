@@ -303,7 +303,6 @@ int main(int argc, char **argv)
     int dbflags = 0;
     char *index_dir = 0;
     char *exec = 0;
-    (void)exec;
     int dump = 0;
 
     struct option long_options[] = {
