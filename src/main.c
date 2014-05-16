@@ -129,7 +129,7 @@ int sift(const char *path, struct feature **features, int *num_features)
 
 void index_file(char *path, void* db_)
 {
-    GDBM_FILE db = (GDBM_FILE)db_;
+    GDBM_FILE db = db_;
 
     datum key = {path, strlen(path)+1};
     int skip;
@@ -396,6 +396,8 @@ int main(int argc, char **argv)
         for(int j = 0; j < num_matches; j++) {
             exec_files[num_exec_files - num_matches + j] = matches[j].file;
         }
+
+	free(matches);
     }
 
     if(exec) {
