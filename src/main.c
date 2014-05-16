@@ -206,8 +206,6 @@ int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_
         return 0;
     }
 
-    printf("%d\n", num_other_features);
-
     // TODO:
     // one I/O thread, ring buffer for threads
 // currently this is not efficient due to critical gdbm_fetch
