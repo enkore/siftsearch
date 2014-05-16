@@ -400,9 +400,11 @@ int main(int argc, char **argv)
     }
 
     if(exec) {
-        for(int i = 0; i < num_exec_files; i++)
-            printf("%s ", exec_files[i]);
-        printf("\n");
+	if(verbose) {
+	    for(int i = 0; i < num_exec_files; i++)
+		printf("%s ", exec_files[i]);
+	    printf("\n");
+	}
 
         gdbm_close(db);
 
@@ -412,12 +414,10 @@ int main(int argc, char **argv)
         execvp(exec, exec_files);
     }
 
-    for(int i = 0; i < num_exec_files; i++) {
+    for(int i = 0; i < num_exec_files; i++)
         free(exec_files[i]);
-    }
     free(exec_files);
 
     gdbm_close(db);
     return 0;
 }
-
