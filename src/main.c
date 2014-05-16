@@ -29,7 +29,6 @@
 
 #include "util.h"
 #include "tree.h"
-#include "db.h"
 
 /**
  * Contrast threshold for finding SIFT features
@@ -131,17 +130,18 @@ int sift(const char *path, struct feature **features, int *num_features)
 
 void index_file(char *path, void* db_)
 {
-    DB db = (DB)db_;
+    GDBM_FILE db = (GDBM_FILE)db_;
 
-    /* datum key = {path, strlen(path)+1}; */
-    /* int skip; */
+    datum key = {path, strlen(path)+1};
+    int skip;
 
-    /* #pragma omp critical */
-    /* skip = gdbm_exists(db, key); */
-    /* if(skip) { */
-    /*     free(path); */
-    /*     return; */
-    /* } */
+    #pragma omp critical
+    skip = gdbm_exists(db, key);
+    if(skip) {
+	printf("skip\n");
+        free(path);
+        return;
+    }
 
     struct feature *features;
     int num_features;
@@ -167,22 +167,21 @@ void index_file(char *path, void* db_)
     free(features);
     kdtree_release(kd_tree);
 
-    /* datum value = {data, data_size}; */
+    datum value = {data, data_size};
 
     #pragma omp critical
-    db_append(db, path, data, data_size);
-//    gdbm_store(db, key, value, GDBM_REPLACE);
+    gdbm_store(db, key, value, GDBM_REPLACE);
 
     free(data);
     free(path);
 }
 
-int update_index(const char *dir, DB db)
+int update_index(const char *dir, GDBM_FILE db)
 {
     return enumerate_files(dir, file_extensions, index_file, db);
 }
 
-int match_file(const char *file, DB db, struct match **matches, int *num_matches)
+int match_file(const char *file, GDBM_FILE db, struct match **matches, int *num_matches)
 {
     (void)matches;
     *num_matches = 0;
@@ -220,22 +219,23 @@ int match_file(const char *file, DB db, struct match **matches, int *num_matches
 // reads...
 
 
-    off_t index = 0;
-    int end_of_records = 0;
+    datum key = gdbm_firstkey(db);
     static const int bufsz = 64;
     struct {
         char *key;
         char *data;
     } buffer[bufsz];
 
-    while(!end_of_records) {
+    while(1) {
         int j;
 
-        for(j = 0; j < bufsz; j++) {
-            if(!db_next(db, &index, &buffer[j].key, &buffer[j].data, 0)) {
-		end_of_records = 1;
-                break;
-	    }
+	if(!key.dptr)
+	    break;
+
+        for(j = 0; j < bufsz && key.dptr; j++, key = gdbm_nextkey(db, key)) {
+            datum data = gdbm_fetch(db, key);
+            buffer[j].key = key.dptr;
+            buffer[j].data = data.dptr;
         }
 
         #pragma omp parallel for
@@ -263,7 +263,9 @@ int match_file(const char *file, DB db, struct match **matches, int *num_matches
 
             if((m*100) / num_other_features > 10)
                 tprintf("%s: %d matches [%d %%]\n", buffer[k].key, m, (m*100)/num_other_features);
+
             free(buffer[k].key);
+            free(buffer[k].data);
         }
     }
 
@@ -342,7 +344,7 @@ void print_usage(FILE* f)
 
 int main(int argc, char **argv)
 {
-    DB db;
+    GDBM_FILE db;
     char *dbfile = "sift.db";
     int dbflags = 0;
     char *index_dir = 0;
@@ -350,13 +352,9 @@ int main(int argc, char **argv)
     (void)exec;
     int dump = 0;
 
-    /* printf("sizeof(sift_data)=%d\n", sizeof(struct sift_data)); */
-    /* printf("sizeof(kd_node)=%d\n", sizeof(struct kd_node)); */
-    /* printf("sizeof(feature)=%d\n", sizeof(struct feature)); */
-
     struct option long_options[] = {
         {"index",required_argument, 0,  'i'},
-        {"clean",no_argument,       &dbflags, DB_TRUNCATE},
+        {"clean",no_argument,       &dbflags, GDBM_NEWDB},
         {"db",   required_argument, 0,  'b'},
         {"exec", required_argument, 0,  'e'},
         {"dump", no_argument,       &dump, 1},
@@ -392,36 +390,37 @@ int main(int argc, char **argv)
     }
 
     if(index_dir) {
-        db = db_open(dbfile, DB_WRITE|DB_CREATE|dbflags);
+        db = gdbm_open(dbfile, 1024, GDBM_WRCREAT|dbflags, 0644, 0);
         if(!db) {
-            fprintf(stderr, "Can't open '%s': %s\n", dbfile, strerror(errno));
+            fprintf(stderr, "Can't open '%s': %s\n", dbfile, gdbm_strerror(gdbm_errno));
             return 1;
         }
 
         printf("Indexing '%s'\n", index_dir);
         update_index(index_dir, db);
-        db_close(db);
+        gdbm_close(db);
     }
 
     // Subsequent operations require no write access
-    db = db_open(dbfile, 0);
+    db = gdbm_open(dbfile, 1024, GDBM_READER, 0, 0);
     if(!db) {
-        fprintf(stderr, "Can't open '%s': %s\n", dbfile, strerror(errno));
+        fprintf(stderr, "Can't open '%s': %s\n", dbfile, gdbm_strerror(gdbm_errno));
         return 1;
     }
 
     if(dump) {
         // This functionality doesn't seem to be available easily
         // using gdbmtool or similar thus I added it here
-        off_t index = 0;
-        char *key, *value;
+        datum key = gdbm_firstkey(db);
 
-        while(db_next(db, &index, &key, &value, 0)) {
-            puts(key);
-            free(key);
+        while(key.dptr) {
+            datum nextkey = gdbm_nextkey(db, key);
+            puts(key.dptr);
+            free(key.dptr);
+            key = nextkey;
         }
 
-        db_close(db);
+        gdbm_close(db);
         return 0;
     }
 
@@ -447,22 +446,22 @@ int main(int argc, char **argv)
         }
     }
 
-/*     if(exec) { */
-/*         for(int i = 0; i < num_exec_files; i++) */
-/*             printf("%s ", exec_files[i]); */
-/*         printf("\n"); */
+    /*     if(exec) { */
+    /*         for(int i = 0; i < num_exec_files; i++) */
+    /*             printf("%s ", exec_files[i]); */
+    /*         printf("\n"); */
 
-/*         // complete cleanup */
-/*         db_close(db); */
+    /*         // complete cleanup */
+    /*         db_close(db); */
 
-/*         exec_files[num_exec_files] = 0; // terminate array with NUL */
-/*         execvp(exec, exec_files); */
-/* //	execvp(exec, exec + [match_files]); */
-/*     } */
+    /*         exec_files[num_exec_files] = 0; // terminate array with NUL */
+    /*         execvp(exec, exec_files); */
+    /* //	execvp(exec, exec + [match_files]); */
+    /*     } */
 
     /* free(exec_files); */
 
-    db_close(db);
+    gdbm_close(db);
     return 0;
 }
 

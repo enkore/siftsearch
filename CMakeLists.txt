@@ -48,7 +48,6 @@ add_executable(
     src/main.c
     src/util.c
     src/tree.c
-    src/db.c
 )
 
 target_link_libraries(siftsearch ${OPENSIFT_LIBRARIES} ${OpenCV_LIBS} ${GTK2_LIBRARIES} -lgdbm) 
