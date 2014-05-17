@@ -236,11 +236,8 @@ int match_file(const char *file, GDBM_FILE db, struct match **pmatches, int *pnu
             if(match_percent > 10)
             #pragma omp critical
             {
-                if(isatty(STDOUT_FILENO)) {
+                if(isatty(STDOUT_FILENO))
                     printf("%s: %d matches [%d %%]\n", buffer[k].key, m, (m*100)/num_other_features);
-                } else {
-                    puts(buffer[k].key);
-                }
 
                 struct match match = {
                     .file = strdup(buffer[k].key),
@@ -305,7 +302,8 @@ void print_usage(FILE* f)
 	    "\nStandard Output:\n"
 	    "If standard output is connected to a terminal, detailed match information is\n"
 	    "printed for each file (number of matches and percentage). If standard output\n"
-	    "is not connected to a terminal only the file name is printed.\n"
+	    "is not connected to a terminal only the file name is printed and files are sorted\n"
+	    "by ascending match percentage.\n"
 	    "Error messages and --verbose information is always printed to standard error.\n");
 }
 
@@ -406,8 +404,11 @@ int main(int argc, char **argv)
         exec_files = realloc(exec_files, (num_exec_files+1)*sizeof(char*));
         match_sort(matches, num_matches);
 
-        for(int j = 0; j < num_matches; j++)
+        for(int j = 0; j < num_matches; j++) {
             exec_files[num_exec_files - num_matches + j] = matches[j].file;
+	    if(!isatty(STDOUT_FILENO))
+		puts(matches[j].file);
+	}
 
         free(matches);
     }

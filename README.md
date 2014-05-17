@@ -56,9 +56,10 @@ Building is the usual cmake/make thingy:
             Display this help message.
         --dump
             List all indexed files and exit.
-    
+
     Standard Output:
-    If standard output is connected to a terminal, detailed match information is
-    printed for each file (number of matches and percentage). If standard output
-    is not connected to a terminal only the file name is printed.
-    Error messages and --verbose information is always printed to standard error.
+	If standard output is connected to a terminal, detailed match information is
+	printed for each file (number of matches and percentage). If standard output
+	is not connected to a terminal only the file name is printed and files are sorted
+	by ascending match percentage.
+	Error messages and --verbose information is always printed to standard error.
