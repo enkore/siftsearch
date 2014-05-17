@@ -233,7 +233,9 @@ int match_file(const char *file, GDBM_FILE db, struct match **pmatches, int *pnu
             }
 
             int match_percent = (m*100) / num_other_features;
-            if(match_percent > 10) {
+            if(match_percent > 10)
+            #pragma omp critical
+            {
                 if(isatty(STDOUT_FILENO)) {
                     printf("%s: %d matches [%d %%]\n", buffer[k].key, m, (m*100)/num_other_features);
                 } else {
