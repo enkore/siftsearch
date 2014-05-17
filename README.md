@@ -32,27 +32,33 @@ Building is the usual cmake/make thingy:
     
     Usage:
             siftsearch --help
-            siftsearch [--db <file>] [--clean] --index <directory>
-            siftsearch [--db <file>] [--exec <command>] <file> ...
-            siftsearch [--db <file>] --dump
+            siftsearch <options> --index <directory> [--clean]
+            siftsearch <options> [--exec <command>] <file> ...
+            siftsearch <options> --dump
     
     Options:
         --db <file>
             Set database file to use.
+        --exec <command>
+            Execute <command> with absolute paths to found files sorted by ascending
+            match percentage.
+        --verbose
+            Enable verbose output.
+    
+    Commands:
         --index <directory>
             Create or update database from all images in the given directory
             , recursing subdirectories.
         --clean
             Discard existing database contents, if any. Not effective without
             --index.
-        --exec <command>
-            Execute <command> with absolute paths to found files.
         --help
             Display this help message.
         --dump
-            List all indexed files and exit.Usage:
-
-
-	siftsearch index [--db="sift.db"] [<directory>]
-	siftsearch search [--db="sift.db"] <file>
-	siftsearch --help
+            List all indexed files and exit.
+    
+    Standard Output:
+    If standard output is connected to a terminal, detailed match information is
+    printed for each file (number of matches and percentage). If standard output
+    is not connected to a terminal only the file name is printed.
+    Error messages and --verbose information is always printed to standard error.

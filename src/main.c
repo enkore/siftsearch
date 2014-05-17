@@ -276,26 +276,37 @@ void print_usage(FILE* f)
 
             "\nUsage:\n"
             "\tsiftsearch --help\n"
-            "\tsiftsearch [--db <file>] [--clean] --index <directory>\n"
-            "\tsiftsearch [--db <file>] [--exec <command>] <file> ...\n"
-            "\tsiftsearch [--db <file>] --dump\n"
+            "\tsiftsearch <options> --index <directory> [--clean]\n"
+            "\tsiftsearch <options> [--exec <command>] <file> ...\n"
+            "\tsiftsearch <options> --dump\n"
 
             "\nOptions:\n"
             "    --db <file>\n"
             "\tSet database file to use.\n"
+	    "    --exec <command>\n"
+            "\tExecute <command> with absolute paths to found files sorted by ascending\n"
+            "\tmatch percentage.\n"
+	    "    --verbose\n"
+	    "\tEnable verbose output.\n"
+
+	    "\nCommands:\n"
             "    --index <directory>\n"
             "\tCreate or update database from all images in the given directory\n"
             "\t, recursing subdirectories.\n"
             "    --clean\n"
             "\tDiscard existing database contents, if any. Not effective without\n"
             "\t--index.\n"
-            "    --exec <command>\n"
-            "\tExecute <command> with absolute paths to found files sorted by ascending\n"
-            "\tmatch percentage.\n"
+
             "    --help\n"
             "\tDisplay this help message.\n"
             "    --dump\n"
-            "\tList all indexed files and exit.\n");
+            "\tList all indexed files and exit.\n"
+
+	    "\nStandard Output:\n"
+	    "If standard output is connected to a terminal, detailed match information is\n"
+	    "printed for each file (number of matches and percentage). If standard output\n"
+	    "is not connected to a terminal only the file name is printed.\n"
+	    "Error messages and --verbose information is always printed to standard error.\n");
 }
 
 int main(int argc, char **argv)
@@ -351,7 +362,7 @@ int main(int argc, char **argv)
             return 1;
         }
 
-        printf("Indexing '%s'\n", index_dir);
+        fprintf(stderr, "Indexing '%s'\n", index_dir);
         update_index(index_dir, db);
         gdbm_close(db);
     }
@@ -404,8 +415,8 @@ int main(int argc, char **argv)
     if(exec) {
         if(verbose) {
             for(int i = 0; i < num_exec_files; i++)
-                printf("%s ", exec_files[i]);
-            printf("\n");
+                fprintf(stderr, "%s ", exec_files[i]);
+            putc('\n', stderr);
         }
 
         gdbm_close(db);
