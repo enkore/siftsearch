@@ -395,11 +395,10 @@ int main(int argc, char **argv)
         exec_files = realloc(exec_files, (num_exec_files+1)*sizeof(char*));
         match_sort(matches, num_matches);
 
-        for(int j = 0; j < num_matches; j++) {
+        for(int j = 0; j < num_matches; j++)
             exec_files[num_exec_files - num_matches + j] = matches[j].file;
-        }
 
-	free(matches);
+        free(matches);
     }
 
     if(exec) {
